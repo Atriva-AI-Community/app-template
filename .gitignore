@@ -1,4 +1,16 @@
-*.env
+# Local environment — do NOT commit credentials
+.env
+
+# Service repos cloned by the quickstart (not submodules — keep them out of git)
+atriva-ai-platform-backend/
+ai-inference-ov/
+video-pipeline-ffmpeg-x86/
+ai-inference-rk3588/
+video-pipeline-ffmpeg-rk3588/
+
+# Common artifacts
 *.pem
-node_modules
-__pycache__
+node_modules/
+__pycache__/
+*.pyc
+.DS_Store
