@@ -1,0 +1,23 @@
+# Camera / stream configuration for the Atriva video pipeline
+#
+# Each entry maps a camera_id to an input source.
+# Supported sources:
+#   - RTSP stream URL:  rtsp://user:pass@192.168.1.10:554/stream
+#   - Local video file: /app/videos/sample.mp4
+#   - HTTP stream:      http://example.com/stream.m3u8
+#
+# These values are used when calling:
+#   POST /api/v1/video-pipeline/decode/
+#   Body: { "camera_id": "<id>", "source": "<url_or_path>", "fps": 5 }
+
+cameras:
+  - camera_id: cam-demo-1
+    source: /app/videos/sample.mp4
+    fps: 5
+    description: Local sample video (for testing without a live camera)
+
+  # Uncomment and update to add a real RTSP camera:
+  # - camera_id: cam-entrance
+  #   source: rtsp://admin:password@192.168.1.100:554/h264/ch1/main/av_stream
+  #   fps: 5
+  #   description: Entrance camera

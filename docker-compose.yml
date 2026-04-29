@@ -1,0 +1,107 @@
+version: "3.9"
+
+# Atriva AI App Template — full stack orchestration
+#
+# Before running: clone the three service repos inside this directory
+#   git clone https://github.com/atriva-ai/video-pipeline-ffmpeg-x86.git
+#   git clone https://github.com/atriva-ai/ai-inference-ov.git
+#   git clone https://github.com/atriva-ai/atriva-ai-platform-backend.git
+#
+# Then: cp .env.example .env  (and edit credentials if needed)
+# Then: docker-compose up --build
+
+services:
+
+  # ── Database ─────────────────────────────────────────────────────────
+  db:
+    image: postgres:15.5
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-atriva}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-atriva_app}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - atriva-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atriva}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Platform Backend ──────────────────────────────────────────────────
+  backend:
+    build:
+      context: ./atriva-ai-platform-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-atriva}:${POSTGRES_PASSWORD:-changeme}@db:5432/${POSTGRES_DB:-atriva_app}
+      VIDEO_PIPELINE_URL: http://video_pipeline:8002
+      AI_INFERENCE_URL: http://ai_inference:8001
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - atriva-net
+
+  # ── AI Inference (OpenVINO x86) ───────────────────────────────────────
+  ai_inference:
+    build:
+      context: ./ai-inference-ov
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      - shared-frames-data:/app/frames
+      - shared-temp-data:/app/shared
+    environment:
+      SHARED_FRAMES_PATH: /app/frames
+      SHARED_TEMP_PATH: /app/shared
+    networks:
+      - atriva-net
+
+  # ── Video Pipeline (FFmpeg x86) ───────────────────────────────────────
+  video_pipeline:
+    build:
+      context: ./video-pipeline-ffmpeg-x86
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    volumes:
+      - shared-frames-data:/app/frames
+      - shared-temp-data:/app/shared
+    environment:
+      TEMP_SHARED_PATH: /app/shared
+    networks:
+      - atriva-net
+
+  # ── Nginx Reverse Proxy ───────────────────────────────────────────────
+  nginx:
+    image: nginx:1.25.3-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      - backend
+      - ai_inference
+      - video_pipeline
+    networks:
+      - atriva-net
+
+# ── Shared Volumes ──────────────────────────────────────────────────────
+# shared-frames-data: video_pipeline writes frames here; ai_inference reads them
+# shared-temp-data:   scratch space shared between both services
+volumes:
+  pgdata:
+  shared-frames-data:
+  shared-temp-data:
+
+networks:
+  atriva-net:
+    driver: bridge

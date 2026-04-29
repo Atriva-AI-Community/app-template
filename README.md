@@ -28,26 +28,40 @@ Your app / dashboard / agent
 
 ## 🚀 Quick Start
 
-Prerequisites: Docker and Docker Compose installed.
+Prerequisites: Docker (20.10+) and Git.
 
 ```bash
 # 1. Clone this template
 git clone https://github.com/atriva-ai-community/app-template.git
 cd app-template
 
-# 2. Clone the core service repos alongside it
+# 2. Clone the three core service repos into this directory
 git clone https://github.com/atriva-ai/video-pipeline-ffmpeg-x86.git
 git clone https://github.com/atriva-ai/ai-inference-ov.git
 git clone https://github.com/atriva-ai/atriva-ai-platform-backend.git
 
-# 3. Start the full stack
+# 3. Copy environment config (edit credentials if needed)
+cp .env.example .env
+
+# 4. Build and start the full stack
 docker-compose up --build
 ```
 
 The stack will be available at:
-- AI Inference API: http://localhost:8001/docs
-- Video Pipeline API: http://localhost:8002/docs
-- Platform API: http://localhost:8000/docs
+
+| Service | URL | Notes |
+|---------|-----|-------|
+| Platform API (via nginx) | http://localhost/docs | Swagger UI |
+| AI Inference API | http://localhost:8001/docs | OpenVINO models |
+| Video Pipeline API | http://localhost:8002/docs | FFmpeg frame extraction |
+| Platform API (direct) | http://localhost:8000/docs | Bypass nginx |
+
+> **Tip:** Send a test decode request to start extracting frames:
+> ```bash
+> curl -X POST http://localhost:8002/api/v1/video-pipeline/decode/ \
+>   -H "Content-Type: application/json" \
+>   -d '{"camera_id": "cam-demo-1", "source": "/app/videos/sample.mp4", "fps": 5}'
+> ```
 
 ---
 
@@ -55,17 +69,21 @@ The stack will be available at:
 
 ```
 app-template/
-├── docker-compose.yml     ← wires together the atriva-ai service containers
+├── docker-compose.yml        ← wires together the atriva-ai service containers
+├── .env.example              ← copy to .env before starting
+├── nginx/
+│   ├── nginx.conf            ← nginx base config
+│   └── conf.d/default.conf   ← reverse proxy routing rules
 ├── config/
-│   └── cameras.yml        ← camera / stream configuration
-├── examples/
-│   ├── sample.mp4         ← test video for local development
-│   └── test_image.jpg     ← test image for inference verification
+│   └── cameras.yml           ← camera / RTSP stream configuration
 └── docs/
-    ├── architecture.md    ← how the services connect
-    ├── getting-started.md ← full setup guide
-    └── customizing.md     ← how to swap models, add cameras, extend the stack
+    ├── architecture.md       ← how the services connect
+    ├── getting-started.md    ← full setup guide
+    └── usage.md              ← API usage examples
 ```
+
+After running the quickstart, cloned service repos (`video-pipeline-ffmpeg-x86/`, `ai-inference-ov/`,
+`atriva-ai-platform-backend/`) will appear alongside these files — they are gitignored intentionally.
 
 ---
 

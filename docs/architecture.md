@@ -1,39 +1,82 @@
 # Architecture — App Template
 
-This document describes the high-level architecture for the app-template and responsibilities of each module.
-
 ## Overview
 
-The app-template shows a small, modular Edge AI product:
+The app-template wires five Docker services into a complete Edge AI platform stack:
 
-Camera/Input -> Video Pipeline -> Inference -> Tracker/Aggregator -> Backend/API -> UI/Dashboard
+```
+[Camera / RTSP / File]
+        │
+        ▼
+┌─────────────────────────┐
+│  video_pipeline (8002)  │  FFmpeg-based frame extractor
+│  video-pipeline-ffmpeg  │  Decodes video → JPEG frames
+└───────────┬─────────────┘
+            │  shared Docker volume
+            │  /app/frames/{camera_id}/frame_XXXX.jpg
+            ▼
+┌─────────────────────────┐
+│  ai_inference (8001)    │  OpenVINO inference engine
+│  ai-inference-ov        │  Object detection, LPR, tracking
+└───────────┬─────────────┘
+            │  REST API results
+            ▼
+┌─────────────────────────┐
+│  backend (8000)         │  FastAPI platform backend
+│  atriva-ai-platform     │  Stores results in PostgreSQL
+└───────────┬─────────────┘
+            │
+            ▼
+┌─────────────────────────┐
+│  db (5432)              │  PostgreSQL 15
+│                         │  Persistent analytics storage
+└─────────────────────────┘
 
-### Main components
+All services reachable via:
+┌─────────────────────────┐
+│  nginx (80)             │  Reverse proxy
+│                         │  Routes /api/v1/ai/ → ai_inference
+│                         │  Routes /api/v1/video-pipeline/ → video_pipeline
+│                         │  Routes / → backend
+└─────────────────────────┘
+```
 
-- **Video Pipeline**
-  - Responsibilities: capture (file/local camera), decode, resize, pre-process frames.
-  - Typical tech: GStreamer or OpenCV, containerized.
+## Shared Volume Design
 
-- **Inference**
-  - Responsibilities: load model, run inference per frame, return detections.
-  - For this template: a simplified inference stub is provided; replace with RKNN/TensorRT/ONNX modules as needed.
+The frame exchange between `video_pipeline` and `ai_inference` uses a Docker named volume
+(`shared-frames-data`) mounted at `/app/frames` in both containers. This avoids API overhead
+for high-frequency frame data.
 
-- **Tracker / Aggregator**
-  - Responsibilities: link object detections across frames, aggregate metrics, generate events.
+```
+/app/frames/
+├── cam-entrance/
+│   ├── frame_0001.jpg
+│   ├── frame_0002.jpg
+│   └── ...
+└── cam-demo-1/
+    ├── frame_0001.jpg
+    └── ...
+```
 
-- **Backend / API**
-  - Responsibilities: expose REST/WebSocket endpoints for metadata, persist events (optional).
+A second shared volume (`shared-temp-data` at `/app/shared`) holds temporary processing data.
 
-- **UI / Dashboard**
-  - Responsibilities: display live video stream + overlay, show analytics and historical data.
+## Service Responsibilities
 
-### Containerization
+| Service | Port | Repo | Role |
+|---------|------|------|------|
+| `video_pipeline` | 8002 | video-pipeline-ffmpeg-x86 | Decode video, extract frames |
+| `ai_inference` | 8001 | ai-inference-ov | Run OpenVINO models on frames |
+| `backend` | 8000 | atriva-ai-platform-backend | Store results, expose analytics API |
+| `db` | 5432 | postgres:15.5 | Persistent storage |
+| `nginx` | 80 | nginx:1.25.3-alpine | Reverse proxy |
 
-Each major component runs in its own container to keep the template modular and extendable. See `docker/docker-compose.yml`.
+## Extensibility
 
-### Extensibility points
-
-- Replace `inference_stub` with hardware-optimized inference container (RKNN, TensorRT).
-- Add GPU support by updating container runtime and base images.
-- Add authentication and persistent storage (Postgres, S3) in production variants.
-
+- **Different hardware**: Swap `ai-inference-ov` for `ai-inference-rk3588` on Rockchip boards,
+  or `deepstream-api-jetson` on NVIDIA Jetson.
+- **Add a frontend**: Clone [retail-analytics-frontend](https://github.com/atriva-ai/retail-analytics-frontend)
+  into this directory and add a `frontend` service to `docker-compose.yml` pointing to it.
+- **Add hardware acceleration**: For x86 with VAAPI, add `--device /dev/dri:/dev/dri` to the
+  `video_pipeline` service in `docker-compose.yml`.
+- **Production deployment**: Replace the `build:` directives with pre-built image references
+  from your container registry. Add TLS to the nginx config.
